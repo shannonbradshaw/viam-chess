@@ -20,7 +20,6 @@ func init() {
 }
 
 type ChessConfig struct {
-
 }
 
 func (cfg *ChessConfig) Validate(path string) ([]string, []string, error) {
@@ -29,7 +28,7 @@ func (cfg *ChessConfig) Validate(path string) ([]string, []string, error) {
 
 type viamChessChess struct {
 	resource.AlwaysRebuild
-	
+
 	name resource.Name
 
 	logger logging.Logger

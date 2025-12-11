@@ -29,14 +29,12 @@ type BoardCameraConfig struct {
 	Input string // this is the cropped camera for the board, TODO: what orientation???
 }
 
-
 func (cfg *BoardCameraConfig) Validate(path string) ([]string, []string, error) {
 	if cfg.Input == "" {
 		return nil, nil, fmt.Errorf("need an input")
 	}
 	return []string{cfg.Input}, nil, nil
 }
-
 
 func newBoardCamera(ctx context.Context, deps resource.Dependencies, rawConf resource.Config, logger logging.Logger) (camera.Camera, error) {
 	conf, err := resource.NativeConfig[*BoardCameraConfig](rawConf)
@@ -49,27 +47,27 @@ func newBoardCamera(ctx context.Context, deps resource.Dependencies, rawConf res
 
 func NewBoardCamera(ctx context.Context, deps resource.Dependencies, name resource.Name, conf *BoardCameraConfig, logger logging.Logger) (camera.Camera, error) {
 	var err error
-	
+
 	bc := &BoardCamera{
-		name: name,
-		conf: conf,
+		name:   name,
+		conf:   conf,
 		logger: logger,
 	}
-	
+
 	bc.input, err = camera.FromProvider(deps, conf.Input)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return bc, nil
 }
 
 type BoardCamera struct {
 	resource.AlwaysRebuild
 	resource.TriviallyCloseable
-	
-	name resource.Name
-	conf *BoardCameraConfig
+
+	name   resource.Name
+	conf   *BoardCameraConfig
 	logger logging.Logger
 
 	input camera.Camera
@@ -94,6 +92,21 @@ func (bc *BoardCamera) Images(ctx context.Context, filterSourceNames []string, e
 	if err != nil {
 		return nil, rm, err
 	}
+
+	dst, err := BoardDebugImage(srcImg)
+	if err != nil {
+		return nil, rm, err
+	}
+
+	result, err := camera.NamedImageFromImage(dst, ni[0].SourceName, "", data.Annotations{})
+	if err != nil {
+		return nil, rm, err
+	}
+	return []camera.NamedImage{result}, rm, nil
+
+}
+
+func BoardDebugImage(srcImg image.Image) (image.Image, error) {
 	bounds := srcImg.Bounds()
 	dst := image.NewRGBA(bounds)
 
@@ -103,7 +116,7 @@ func (bc *BoardCamera) Images(ctx context.Context, filterSourceNames []string, e
 			origColor := srcImg.At(x, y)
 			cf, ok := colorful.MakeColor(origColor)
 			if !ok {
-				return nil, rm, fmt.Errorf("bad color: %v", origColor)
+				return nil, fmt.Errorf("bad color: %v", origColor)
 			}
 			h, _, _ := cf.Hsv()
 			newColor := colorful.Hsv(h, 1, 1)
@@ -132,12 +145,7 @@ func (bc *BoardCamera) Images(ctx context.Context, filterSourceNames []string, e
 		}
 	}
 
-	// return the result
-	result, err := camera.NamedImageFromImage(dst, ni[0].SourceName, "", data.Annotations{})
-	if err != nil {
-		return nil, rm, err
-	}
-	return []camera.NamedImage{result}, rm, nil
+	return dst, nil
 }
 
 func (bc *BoardCamera) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {

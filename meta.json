@@ -2,8 +2,8 @@
   "$schema": "https://dl.viam.dev/module.schema.json",
   "module_id": "erh:viam-chess",
   "visibility": "public",
-  "url": "",
-  "description": "Modular generic service: chess",
+  "url": "https://github.com/erh/viam-chess",
+  "description": "chess",
   "models": [
     {
       "api": "rdk:service:generic",

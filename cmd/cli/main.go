@@ -9,7 +9,7 @@ import (
 	generic "go.viam.com/rdk/services/generic"
 
 	"github.com/erh/vmodutils"
-	
+
 	"viamchess"
 )
 
@@ -26,7 +26,7 @@ func realMain() error {
 
 	host := flag.String("host", "", "host")
 	debug := flag.Bool("debug", false, "")
-	
+
 	flag.Parse()
 
 	if *debug {
@@ -36,7 +36,7 @@ func realMain() error {
 	if *host == "" {
 		return fmt.Errorf("need a host")
 	}
-	
+
 	cfg := viamchess.ChessConfig{}
 	_, _, err := cfg.Validate("")
 	if err != nil {
