@@ -3,6 +3,7 @@ package viamchess
 import (
 	"context"
 	"fmt"
+	"image"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 
+	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
@@ -20,10 +22,16 @@ import (
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 	"go.viam.com/rdk/spatialmath"
+	viz "go.viam.com/rdk/vision"
+	"go.viam.com/rdk/vision/objectdetection"
 	"go.viam.com/rdk/vision/viscapture"
+
+	"github.com/erh/vmodutils/touch"
 )
 
 var ChessModel = family.WithModel("chess")
+
+const safeZ = 200.0
 
 func init() {
 	resource.RegisterService(generic.API, ChessModel,
@@ -35,6 +43,7 @@ func init() {
 
 type ChessConfig struct {
 	PieceFinder string `json:"piece-finder"`
+	Arm         string
 	Gripper     string
 	Motion      string
 
@@ -45,6 +54,9 @@ func (cfg *ChessConfig) Validate(path string) ([]string, []string, error) {
 	if cfg.PieceFinder == "" {
 		return nil, nil, fmt.Errorf("need a piece-finder")
 	}
+	if cfg.Arm == "" {
+		return nil, nil, fmt.Errorf("need an arm")
+	}
 	if cfg.Gripper == "" {
 		return nil, nil, fmt.Errorf("need a gripper")
 	}
@@ -52,7 +64,7 @@ func (cfg *ChessConfig) Validate(path string) ([]string, []string, error) {
 		return nil, nil, fmt.Errorf("need a pose-start")
 	}
 
-	return []string{cfg.PieceFinder, cfg.Gripper, cfg.PoseStart}, nil, nil
+	return []string{cfg.PieceFinder, cfg.Arm, cfg.Gripper, cfg.PoseStart}, nil, nil
 }
 
 type viamChessChess struct {
@@ -67,6 +79,7 @@ type viamChessChess struct {
 	cancelFunc func()
 
 	pieceFinder vision.Service
+	arm         arm.Arm
 	gripper     gripper.Gripper
 
 	poseStart toggleswitch.Switch
@@ -99,6 +112,11 @@ func NewChess(ctx context.Context, deps resource.Dependencies, name resource.Nam
 	}
 
 	s.pieceFinder, err = vision.FromProvider(deps, conf.PieceFinder)
+	if err != nil {
+		return nil, err
+	}
+
+	s.arm, err = arm.FromProvider(deps, conf.Arm)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +183,7 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 			return nil, err
 		}
 
-		err = s.moveTo(ctx, all, cmd.Move.From)
+		err = s.movePiece(ctx, all, cmd.Move.From, cmd.Move.To)
 		if err != nil {
 			return nil, err
 		}
@@ -182,19 +200,49 @@ func (s *viamChessChess) Close(context.Context) error {
 	return nil
 }
 
-func (s *viamChessChess) moveTo(ctx context.Context, data viscapture.VisCapture, pos string) error {
+func (s *viamChessChess) findObject(data viscapture.VisCapture, pos string) *viz.Object {
 	for _, o := range data.Objects {
-		if !strings.HasPrefix(o.Geometry.Label(), pos) {
-			continue
+		if strings.HasPrefix(o.Geometry.Label(), pos) {
+			return o
 		}
-		s.logger.Infof(o.Geometry.Label())
+	}
+	return nil
+}
 
-		md := o.MetaData()
-		s.logger.Infof("%v - %v", o.Geometry.Label(), md)
+func (s *viamChessChess) findDetection(data viscapture.VisCapture, pos string) objectdetection.Detection {
+	for _, d := range data.Detections {
+		if strings.HasPrefix(d.Label(), pos) {
+			return d
+		}
+	}
+	return nil
+}
 
-		center := md.Center()
+func (s *viamChessChess) movePiece(ctx context.Context, data viscapture.VisCapture, from, to string) error {
+	startPose, err := s.rfs.GetPose(ctx, s.conf.Gripper, "world", nil, nil)
+	if err != nil {
+		return err
+	}
 
-		startPose, err := s.rfs.GetPose(ctx, s.conf.Gripper, "world", nil, nil)
+	useZ := 100.0
+
+	{
+		o := s.findObject(data, from)
+		if o == nil {
+			return fmt.Errorf("can't find object for: %s", from)
+		}
+
+		center := touch.PCFindHighestInRegion(o, image.Rect(-1000, -1000, 1000, 1000))
+		useZ = center.Z
+
+		_, err = s.motion.Move(ctx, motion.MoveReq{
+			ComponentName: s.conf.Gripper,
+			Destination: referenceframe.NewPoseInFrame("world",
+				spatialmath.NewPose(
+					r3.Vector{center.X, center.Y, safeZ},
+					startPose.Pose().Orientation(),
+				)),
+		})
 		if err != nil {
 			return err
 		}
@@ -203,7 +251,7 @@ func (s *viamChessChess) moveTo(ctx context.Context, data viscapture.VisCapture,
 			ComponentName: s.conf.Gripper,
 			Destination: referenceframe.NewPoseInFrame("world",
 				spatialmath.NewPose(
-					r3.Vector{center.X, center.Y, 100},
+					r3.Vector{center.X, center.Y, useZ},
 					startPose.Pose().Orientation(),
 				)),
 		})
@@ -211,9 +259,81 @@ func (s *viamChessChess) moveTo(ctx context.Context, data viscapture.VisCapture,
 			return err
 		}
 
+		got, err := s.gripper.Grab(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if !got {
+			return fmt.Errorf("Grab didn't grab")
+		}
+
+		_, err = s.motion.Move(ctx, motion.MoveReq{
+			ComponentName: s.conf.Gripper,
+			Destination: referenceframe.NewPoseInFrame("world",
+				spatialmath.NewPose(
+					r3.Vector{center.X, center.Y, safeZ},
+					startPose.Pose().Orientation(),
+				)),
+		})
+		if err != nil {
+			return err
+		}
 	}
 
-	return fmt.Errorf("Finis measd ")
+	// ------
+
+	{
+		o2 := s.findObject(data, to)
+		if o2 == nil {
+			return fmt.Errorf("can't find object for: %s", to)
+		}
+
+		md := o2.MetaData()
+		center := md.Center()
+
+		_, err = s.motion.Move(ctx, motion.MoveReq{
+			ComponentName: s.conf.Gripper,
+			Destination: referenceframe.NewPoseInFrame("world",
+				spatialmath.NewPose(
+					r3.Vector{center.X, center.Y, safeZ},
+					startPose.Pose().Orientation(),
+				)),
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = s.motion.Move(ctx, motion.MoveReq{
+			ComponentName: s.conf.Gripper,
+			Destination: referenceframe.NewPoseInFrame("world",
+				spatialmath.NewPose(
+					r3.Vector{center.X, center.Y, useZ},
+					startPose.Pose().Orientation(),
+				)),
+		})
+		if err != nil {
+			return err
+		}
+
+		err := s.setupGripper(ctx)
+		if err != nil {
+			return err
+		}
+
+		_, err = s.motion.Move(ctx, motion.MoveReq{
+			ComponentName: s.conf.Gripper,
+			Destination: referenceframe.NewPoseInFrame("world",
+				spatialmath.NewPose(
+					r3.Vector{center.X, center.Y, safeZ},
+					startPose.Pose().Orientation(),
+				)),
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *viamChessChess) goToStart(ctx context.Context) error {
@@ -221,6 +341,16 @@ func (s *viamChessChess) goToStart(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	err = s.setupGripper(ctx)
+	if err != nil {
+		return err
+	}
+
 	time.Sleep(time.Second)
 	return nil
+}
+
+func (s *viamChessChess) setupGripper(ctx context.Context) error {
+	_, err := s.arm.DoCommand(ctx, map[string]interface{}{"move_gripper": 450})
+	return err
 }

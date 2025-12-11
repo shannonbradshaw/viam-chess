@@ -47,6 +47,7 @@ func realMain() error {
 
 	cfg := viamchess.ChessConfig{
 		PieceFinder: "piece-finder",
+		Arm:         "arm",
 		Gripper:     "gripper",
 		PoseStart:   "hack-pose-look-straight-down",
 	}
