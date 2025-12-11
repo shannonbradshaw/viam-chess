@@ -1,12 +1,12 @@
 # Chess
 
-## Chess Config
+## chess config
 ```json
 {
 }
 ```
 
-## Board Camera Config
+## board camera hack config
 ```json
 {
     "input" : "<cropped-camera>"
