@@ -223,7 +223,7 @@ func (s *viamChessChess) findDetection(data viscapture.VisCapture, pos string) o
 
 func (s *viamChessChess) getCenterFor(data viscapture.VisCapture, pos string) (r3.Vector, error) {
 	if pos == "-" {
-		return r3.Vector{400, 400, 400}, nil
+		return r3.Vector{400, -400, 400}, nil
 	}
 
 	o := s.findObject(data, pos)
