@@ -301,16 +301,18 @@ func (bc *PieceFinder) CaptureAllFromCamera(ctx context.Context, cameraName stri
 
 		ret.Detections = append(ret.Detections, objectdetection.NewDetectionWithoutImgBounds(s.originalBounds, 1, label))
 
-		highPoint := touch.PCFindHighestInRegion(pc, image.Rect(-1000, -1000, 1000, 1000))
-		highX, highY := bc.props.IntrinsicParams.PointToPixel(highPoint.X, highPoint.Y, highPoint.Z)
-		bc.logger.Infof("highPoint: %v high (x,y): %0.2f %0.2f", highPoint, highX, highY)
+		lowPoint := touch.PCFindLowestInRegion(s.pc, image.Rect(-10000, -10000, 10000, 10000))
+
+		lowX, lowY := bc.props.IntrinsicParams.PointToPixel(lowPoint.X, lowPoint.Y, lowPoint.Z)
+		bc.logger.Infof("lowPoint: %v low (x,y): %0.2f %0.2f", lowPoint, lowX, lowY)
+
 		ret.Detections = append(ret.Detections,
 			objectdetection.NewDetectionWithoutImgBounds(
 				image.Rect(
-					int(highX-5),
-					int(highY-5),
-					int(highX+5),
-					int(highY+5),
+					int(lowX-5),
+					int(lowY-5),
+					int(lowX+5),
+					int(lowY+5),
 				),
 				1, "x-"+label))
 	}
