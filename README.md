@@ -1,5 +1,12 @@
 # Chess
 
+## To get your own
+* Get all the hardware
+* Make a table that looks like: ___
+* Create a Viam machine
+* Use the sample config in examples/config1.txt
+* Ask questions when it invariably doesn't work
+
 ## chess config
 ```json
 {

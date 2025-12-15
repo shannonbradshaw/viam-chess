@@ -1,0 +1,218 @@
+{
+  "components": [
+    {
+      "name": "hack-pose-look-straight-down",
+      "api": "rdk:component:switch",
+      "model": "erh:vmodutils:arm-position-saver",
+      "attributes": {
+        "arm": "arm",
+        "motion": "",
+        "joints": [
+          -0.076349139213562,
+          -0.20220564305782318,
+          -1.5693198442459106,
+          -0.0012806119630113246,
+          1.7407830953598022,
+          3.0671448707580566
+        ]
+      },
+      "ui_folder": {
+        "name": "vision"
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "piece-finder",
+      "api": "rdk:service:vision",
+      "model": "erh:viam-chess:piece-finder",
+      "attributes": {
+        "input": "cam"
+      },
+      "ui_folder": {
+        "name": "vision"
+      }
+    },
+    {
+      "name": "builtin",
+      "api": "rdk:service:motion",
+      "model": "rdk:builtin:builtin",
+      "attributes": {
+        "input_range_override": {
+          "arm": {
+            "3": {
+              "max": 1.5,
+              "min": -1.5
+            },
+            "5": {
+              "max": 4.14,
+              "min": 2.14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "chess",
+      "api": "rdk:service:generic",
+      "model": "erh:viam-chess:chess",
+      "attributes": {
+        "engine": "/usr/games/stockfish",
+        "gripper": "gripper",
+        "pose-start": "hack-pose-look-straight-down",
+        "piece-finder": "piece-finder",
+        "arm": "arm",
+        "cam": "cam"
+      },
+      "ui_folder": {
+        "name": "app"
+      }
+    },
+    {
+      "name": "buttons",
+      "api": "rdk:service:generic",
+      "model": "erh:viam-streamdeck:streamdeck-any",
+      "attributes": {
+        "dials": [
+          {
+            "dial": 0,
+            "component": "chess",
+            "command": "skill"
+          }
+        ],
+        "brightness": 100,
+        "keys": [
+          {
+            "color": "green",
+            "component": "chess",
+            "method": "do_command",
+            "args": [
+              {
+                "go": 1
+              }
+            ],
+            "text": "move 1",
+            "key": 0
+          },
+          {
+            "method": "do_command",
+            "args": [
+              {
+                "go": 2
+              }
+            ],
+            "text": "move 2",
+            "key": 1,
+            "color": "green",
+            "component": "chess"
+          },
+          {
+            "color": "green",
+            "component": "chess",
+            "method": "do_command",
+            "args": [
+              {
+                "go": 10
+              }
+            ],
+            "text": "move 10",
+            "key": 2
+          },
+          {
+            "color": "green",
+            "component": "chess",
+            "method": "do_command",
+            "args": [
+              {
+                "go": 40
+              }
+            ],
+            "text": "move 40",
+            "key": 3
+          },
+          {
+            "color": "orange",
+            "component": "chess",
+            "method": "do_command",
+            "args": [
+              {
+                "reset": true
+              }
+            ],
+            "text": "reset",
+            "key": 4
+          },
+          {
+            "key": 5,
+            "color": "red",
+            "component": "chess",
+            "method": "do_command",
+            "args": [
+              {
+                "wipe": true
+              }
+            ],
+            "text": "wipe"
+          }
+        ]
+      },
+      "ui_folder": {
+        "name": "app"
+      }
+    },
+    {
+      "name": "shell",
+      "api": "rdk:service:shell",
+      "attributes": {}
+    }
+  ],
+  "modules": [
+    {
+      "type": "registry",
+      "name": "erh_vmodutils",
+      "module_id": "erh:vmodutils",
+      "version": "latest"
+    },
+    {
+      "type": "registry",
+      "name": "erh_viam-chess",
+      "module_id": "erh:viam-chess",
+      "version": "latest"
+    },
+    {
+      "type": "registry",
+      "name": "erh_viam-streamdeck",
+      "module_id": "erh:viam-streamdeck",
+      "version": "latest",
+      "reload_path": "~/.viam/packages-local/erh_viam-streamdeck_from_reload-module.tar.gz",
+      "reload_enabled": true
+    }
+  ],
+  "fragments": [
+    {
+      "id": "f6e98d80-20a0-4fb6-9cb3-7b527a91ec10",
+      "variables": {
+        "arm-name": "arm",
+        "arm-ip-address": "10.1.1.50",
+        "cam-serial-number": "327122073698"
+      }
+    }
+  ],
+  "fragment_mods": [
+    {
+      "fragment_id": "f6e98d80-20a0-4fb6-9cb3-7b527a91ec10",
+      "mods": [
+        {
+          "$set": {
+            "components.arm.frame.translation.z": -10
+          }
+        },
+        {
+          "$set": {
+            "modules.viam_ufactory.version": "latest-with-prerelease"
+          }
+        }
+      ]
+    }
+  ]
+}
