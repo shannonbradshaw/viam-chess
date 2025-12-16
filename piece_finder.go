@@ -24,6 +24,7 @@ import (
 	"go.viam.com/rdk/vision/classification"
 	"go.viam.com/rdk/vision/objectdetection"
 	"go.viam.com/rdk/vision/viscapture"
+	"go.viam.com/utils/trace"
 
 	"github.com/erh/vmodutils/touch"
 )
@@ -249,15 +250,21 @@ func (bc *PieceFinder) GetObjectPointClouds(ctx context.Context, cameraName stri
 }
 
 func (bc *PieceFinder) CaptureAllFromCamera(ctx context.Context, cameraName string, opts viscapture.CaptureOptions, extra map[string]interface{}) (viscapture.VisCapture, error) {
+	ctx, span := trace.StartSpan(ctx, "PieceFinder::CaptureAllFromCamera")
+	defer span.End()
 
 	ret := viscapture.VisCapture{}
 
+	_, span2 := trace.StartSpan(ctx, "PieceFinder::CaptureAllFromCamera::Images")
 	ni, _, err := bc.input.Images(ctx, nil, extra)
+	span2.End()
 	if err != nil {
 		return ret, err
 	}
 
+	_, span2 = trace.StartSpan(ctx, "PieceFinder::CaptureAllFromCamera::NextPointCloud")
 	pc, err := bc.input.NextPointCloud(ctx, extra)
+	span2.End()
 	if err != nil {
 		return ret, err
 	}
@@ -266,15 +273,22 @@ func (bc *PieceFinder) CaptureAllFromCamera(ctx context.Context, cameraName stri
 		return ret, fmt.Errorf("no images returned from input camera")
 	}
 
+	_, span2 = trace.StartSpan(ctx, "PieceFinder::CaptureAllFromCamera::Image")
 	ret.Image, err = ni[0].Image(ctx)
+	span2.End()
 	if err != nil {
 		return ret, err
 	}
 
+	_, span2 = trace.StartSpan(ctx, "PieceFinder::CaptureAllFromCamera::BoardDebugImageHack")
 	dst, squares, err := BoardDebugImageHack(ret.Image, pc, bc.props)
+	span2.End()
 	if err != nil {
 		return ret, err
 	}
+
+	_, span2 = trace.StartSpan(ctx, "PieceFinder::CaptureAllFromCamera::Finish")
+	defer span2.End()
 
 	if extra["printdst"] == true {
 		err := rimage.WriteImageToFile("hack-test.jpg", dst)

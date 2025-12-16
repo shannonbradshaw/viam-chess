@@ -30,6 +30,8 @@ import (
 	viz "go.viam.com/rdk/vision"
 	"go.viam.com/rdk/vision/objectdetection"
 	"go.viam.com/rdk/vision/viscapture"
+	"go.viam.com/utils/perf"
+	"go.viam.com/utils/trace"
 
 	"github.com/corentings/chess/v2"
 	"github.com/corentings/chess/v2/uci"
@@ -217,6 +219,14 @@ type cmdStruct struct {
 }
 
 func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interface{}) (map[string]interface{}, error) {
+	exporter := perf.NewOtelDevelopmentExporter()
+	err := exporter.Start()
+	if err != nil {
+		return nil, fmt.Errorf("can't start tracer: %w", err)
+	}
+
+	defer exporter.Stop()
+
 	s.doCommandLock.Lock()
 	defer s.doCommandLock.Unlock()
 
@@ -227,7 +237,7 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 		}
 	}()
 	var cmd cmdStruct
-	err := mapstructure.Decode(cmdMap, &cmd)
+	err = mapstructure.Decode(cmdMap, &cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +389,9 @@ func (s *viamChessChess) getCenterFor(data viscapture.VisCapture, pos string, th
 }
 
 func (s *viamChessChess) movePiece(ctx context.Context, data viscapture.VisCapture, theState *state, from, to string, m *chess.Move) error {
+	ctx, span := trace.StartSpan(ctx, "chess::movePiece")
+	defer span.End()
+
 	s.logger.Infof("movePiece called: %s -> %s", from, to)
 	if to != "-" && to[0] != 'X' { // check where we're going
 		o := s.findObject(data, to)
@@ -488,6 +501,9 @@ func (s *viamChessChess) movePiece(ctx context.Context, data viscapture.VisCaptu
 }
 
 func (s *viamChessChess) goToStart(ctx context.Context) error {
+	ctx, span := trace.StartSpan(ctx, "chess::makeAMove")
+	defer span.End()
+
 	err := s.poseStart.SetPosition(ctx, 2, nil)
 	if err != nil {
 		return err
@@ -554,6 +570,9 @@ func (s *viamChessChess) getGame(ctx context.Context) (*state, error) {
 }
 
 func readState(ctx context.Context, fn string) (*state, error) {
+	ctx, span := trace.StartSpan(ctx, "chess::readState")
+	defer span.End()
+
 	data, err := os.ReadFile(fn)
 	if os.IsNotExist(err) {
 		return &state{chess.NewGame(), []int{}}, nil
@@ -576,6 +595,9 @@ func readState(ctx context.Context, fn string) (*state, error) {
 }
 
 func (s *viamChessChess) saveGame(ctx context.Context, theState *state) error {
+	ctx, span := trace.StartSpan(ctx, "chess::saveGame")
+	defer span.End()
+
 	ss := savedState{
 		FEN:       theState.game.FEN(),
 		Graveyard: theState.graveyard,
@@ -588,6 +610,9 @@ func (s *viamChessChess) saveGame(ctx context.Context, theState *state) error {
 }
 
 func (s *viamChessChess) pickMove(ctx context.Context, game *chess.Game) (*chess.Move, error) {
+	ctx, span := trace.StartSpan(ctx, "chess::pickMove")
+	defer span.End()
+
 	if s.engine == nil {
 		moves := game.ValidMoves()
 		if len(moves) == 0 {
@@ -617,6 +642,9 @@ func (s *viamChessChess) pickMove(ctx context.Context, game *chess.Game) (*chess
 }
 
 func (s *viamChessChess) makeAMove(ctx context.Context) (*chess.Move, error) {
+	ctx, span := trace.StartSpan(ctx, "chess::makeAMove")
+	defer span.End()
+
 	err := s.goToStart(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("can't go home: %v", err)
