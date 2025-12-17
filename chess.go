@@ -509,7 +509,7 @@ func (s *viamChessChess) goToStart(ctx context.Context) error {
 		return err
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 250)
 
 	s.startPose, err = s.rfs.GetPose(ctx, s.conf.Gripper, "world", nil, nil)
 	if err != nil {
