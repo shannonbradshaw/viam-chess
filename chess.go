@@ -16,11 +16,6 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	otrace "go.opentelemetry.io/otel/sdk/trace"
-	ootrace "go.opentelemetry.io/otel/trace"
-
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/switch"
@@ -106,8 +101,6 @@ type viamChessChess struct {
 	logger logging.Logger
 	conf   *ChessConfig
 
-	tracer *otrace.TracerProvider
-
 	cancelCtx  context.Context
 	cancelFunc func()
 
@@ -141,6 +134,7 @@ func newViamChessChess(ctx context.Context, deps resource.Dependencies, rawConf 
 }
 
 func NewChess(ctx context.Context, deps resource.Dependencies, name resource.Name, conf *ChessConfig, logger logging.Logger) (resource.Resource, error) {
+	var err error
 
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
@@ -151,14 +145,6 @@ func NewChess(ctx context.Context, deps resource.Dependencies, name resource.Nam
 		cancelCtx:   cancelCtx,
 		cancelFunc:  cancelFunc,
 		skillAdjust: 50,
-	}
-
-	exporter, err := otlptracegrpc.New(context.Background())
-	if err != nil {
-		logger.Warnf("can't enable tracing: %v", err)
-	} else {
-		s.tracer = otrace.NewTracerProvider(otrace.WithBatcher(exporter))
-		otel.SetTracerProvider(s.tracer)
 	}
 
 	s.pieceFinder, err = vision.FromProvider(deps, conf.PieceFinder)
@@ -232,11 +218,8 @@ type cmdStruct struct {
 }
 
 func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interface{}) (map[string]interface{}, error) {
-	if s.tracer != nil {
-		var span ootrace.Span
-		ctx, span = s.tracer.Tracer("chess").Start(ctx, "DoCommand")
-		defer span.End()
-	}
+	ctx, span := trace.StartSpan(ctx, "chess::DoCommand")
+	defer span.End()
 
 	s.doCommandLock.Lock()
 	defer s.doCommandLock.Unlock()
@@ -323,11 +306,6 @@ func (s *viamChessChess) Close(ctx context.Context) error {
 
 	if s.engine != nil {
 		err = multierr.Combine(err, s.engine.Close())
-	}
-
-	if s.tracer != nil {
-		s.tracer.Shutdown(ctx)
-		s.tracer = nil
 	}
 
 	return err
