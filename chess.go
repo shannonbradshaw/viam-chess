@@ -266,14 +266,9 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 	}
 
 	if cmd.Go > 0 {
-		err := s.checkPositionForMoves(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		var m *chess.Move
-		for range cmd.Go {
-			m, err = s.makeAMove(ctx)
+		for n := range cmd.Go {
+			m, err = s.makeAMove(ctx, n == 0)
 			if err != nil {
 				return nil, err
 			}
@@ -520,11 +515,16 @@ func (s *viamChessChess) goToStart(ctx context.Context) error {
 }
 
 func (s *viamChessChess) setupGripper(ctx context.Context) error {
+	ctx, span := trace.StartSpan(ctx, "setupGripper")
+	defer span.End()
+
 	_, err := s.arm.DoCommand(ctx, map[string]interface{}{"move_gripper": 450.0})
 	return err
 }
 
 func (s *viamChessChess) moveGripper(ctx context.Context, p r3.Vector) error {
+	ctx, span := trace.StartSpan(ctx, "moveGripper")
+	defer span.End()
 
 	orientation := &spatialmath.OrientationVectorDegrees{
 		OZ:    -1,
@@ -637,7 +637,7 @@ func (s *viamChessChess) pickMove(ctx context.Context, game *chess.Game) (*chess
 
 }
 
-func (s *viamChessChess) makeAMove(ctx context.Context) (*chess.Move, error) {
+func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*chess.Move, error) {
 	ctx, span := trace.StartSpan(ctx, "makeAMove")
 	defer span.End()
 
@@ -651,12 +651,19 @@ func (s *viamChessChess) makeAMove(ctx context.Context) (*chess.Move, error) {
 		return nil, err
 	}
 
-	m, err := s.pickMove(ctx, theState.game)
+	all, err := s.pieceFinder.CaptureAllFromCamera(ctx, "", viscapture.CaptureOptions{}, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	all, err := s.pieceFinder.CaptureAllFromCamera(ctx, "", viscapture.CaptureOptions{}, nil)
+	if doSanityCheck {
+		err = s.checkPositionForMoves(ctx, all)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	m, err := s.pickMove(ctx, theState.game)
 	if err != nil {
 		return nil, err
 	}
@@ -791,16 +798,11 @@ func (s *viamChessChess) wipe(ctx context.Context) error {
 	return os.Remove(s.fenFile)
 }
 
-func (s *viamChessChess) checkPositionForMoves(ctx context.Context) error {
+func (s *viamChessChess) checkPositionForMoves(ctx context.Context, all viscapture.VisCapture) error {
 	ctx, span := trace.StartSpan(ctx, "checkPositionForMoves")
 	defer span.End()
 
 	theState, err := s.getGame(ctx)
-	if err != nil {
-		return err
-	}
-
-	all, err := s.pieceFinder.CaptureAllFromCamera(ctx, "", viscapture.CaptureOptions{}, nil)
 	if err != nil {
 		return err
 	}
