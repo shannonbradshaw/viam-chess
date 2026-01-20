@@ -16,6 +16,7 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/rimage/transform"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/rdk/utils"
 )
@@ -214,8 +215,11 @@ func filterAndTransformPointCloud(pc pointcloud.PointCloud, corners []image.Poin
 	// Get intrinsic parameters
 	fx := props.IntrinsicParams.Fx
 	fy := props.IntrinsicParams.Fy
-	ppx := props.IntrinsicParams.Ppx
-	ppy := props.IntrinsicParams.Ppy
+
+	// For the transformed output image, use the center of the output as the principal point
+	// The output image goes from (0,0) to (outputSize, outputSize), so center is at (outputSize/2, outputSize/2)
+	newPpx := float64(outputSize) / 2
+	newPpy := float64(outputSize) / 2
 
 	pc.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
 		// Project 3D point to original 2D coordinates
@@ -226,14 +230,15 @@ func filterAndTransformPointCloud(pc pointcloud.PointCloud, corners []image.Poin
 			return true
 		}
 
-		// Apply perspective transform to get new 2D coordinates
+		// Apply perspective transform to get new 2D coordinates in output image space
 		newImgX, newImgY := applyPerspective(matrix, imgX, imgY)
 
 		// Un-project to get new 3D coordinates that will project to (newImgX, newImgY)
+		// Using the output image's principal point (center of output image)
 		// Using: imgX = fx * X/Z + ppx, imgY = fy * Y/Z + ppy
 		// So: X = (imgX - ppx) * Z / fx, Y = (imgY - ppy) * Z / fy
-		newX := (newImgX - ppx) * p.Z / fx
-		newY := (newImgY - ppy) * p.Z / fy
+		newX := (newImgX - newPpx) * p.Z / fx
+		newY := (newImgY - newPpy) * p.Z / fy
 
 		newPoint := r3.Vector{X: newX, Y: newY, Z: p.Z}
 		if d != nil {
@@ -276,11 +281,26 @@ func (c *BoardFinderCam) Properties(ctx context.Context) (camera.Properties, err
 		}, nil
 	}
 
+	// Create new intrinsic parameters for the transformed output image
+	// The output is a square image of size outputSize x outputSize
+	// Principal point is at the center, focal lengths are preserved
+	var newIntrinsics *transform.PinholeCameraIntrinsics
+	if srcProps.IntrinsicParams != nil {
+		newIntrinsics = &transform.PinholeCameraIntrinsics{
+			Width:  c.outputSize,
+			Height: c.outputSize,
+			Fx:     srcProps.IntrinsicParams.Fx,
+			Fy:     srcProps.IntrinsicParams.Fy,
+			Ppx:    float64(c.outputSize) / 2,
+			Ppy:    float64(c.outputSize) / 2,
+		}
+	}
+
 	return camera.Properties{
 		SupportsPCD:      srcProps.SupportsPCD,
 		ImageType:        camera.ColorStream,
-		IntrinsicParams:  srcProps.IntrinsicParams,
-		DistortionParams: srcProps.DistortionParams,
+		IntrinsicParams:  newIntrinsics,
+		DistortionParams: nil, // Distortion doesn't apply to the transformed image
 	}, nil
 }
 
