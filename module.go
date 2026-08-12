@@ -82,6 +82,11 @@ type viamChessChess struct {
 	// Zero value = START (no game). See mode.go.
 	mode modeMachine
 
+	// pending records the engine move currently being executed physically;
+	// non-empty after an execution fault so UIs can report what the robot was
+	// attempting. See pending.go.
+	pending pendingMoveTracker
+
 	// announceEnabled gates the on_move_target dispatch. Default true.
 	announceEnabled atomic.Bool
 

@@ -101,6 +101,7 @@ func (s *viamChessChess) saveGame(ctx context.Context, theState *state) error {
 }
 
 func (s *viamChessChess) wipe(ctx context.Context) error {
+	s.pending.clear()
 	err := os.Remove(s.fenFile)
 	if errors.Is(err, os.ErrNotExist) {
 		s.logger.Warnf("wipe called but no game state file found at %s — nothing to wipe", s.fenFile)
@@ -114,6 +115,7 @@ func (s *viamChessChess) wipe(ctx context.Context) error {
 // active transition runs inline), so START always means no game. Unlike wipe it
 // does not warn on a missing file, since absence is the normal case.
 func (s *viamChessChess) ensureNoGame() error {
+	s.pending.clear()
 	err := os.Remove(s.fenFile)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

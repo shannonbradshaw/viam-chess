@@ -68,6 +68,7 @@ func (s *viamChessChess) movePieceWithPickupZ(ctx context.Context, data viscaptu
 					theState.blackGraveyard = append(theState.blackGraveyard, int(capturedPiece))
 				}
 			}
+			s.pending.setPhaseIfDest(to, phaseCaptureCleared)
 		}
 	}
 

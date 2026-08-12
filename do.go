@@ -44,25 +44,28 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 	// return polling clients would see stale state for the entire arm movement.
 	if bs, _ := cmdMap["board-snapshot"].(bool); bs {
 		_, auto, gameOver := s.modeFields()
+		pendingMove, pendingPhase := s.pending.get()
 		s.boardCache.mu.RLock()
 		if s.boardCache.ready {
 			result := map[string]interface{}{
-				"fen":             s.boardCache.fen,
-				"camera_board":    s.boardCache.cameraBoard,
-				"white_graveyard": s.boardCache.whiteGraveyard,
-				"black_graveyard": s.boardCache.blackGraveyard,
-				"auto":            auto,
-				"game_over":       gameOver,
-				"needs_fix":       s.boardCache.needsFix,
-				"captured_at_ms":  s.boardCache.capturedAt.UnixMilli(),
-				"event":           s.boardCache.gameEvents.Event,
-				"outcome":         s.boardCache.gameEvents.Outcome,
-				"method":          s.boardCache.gameEvents.Method,
-				"turn":            s.boardCache.gameEvents.Turn,
-				"in_check":        s.boardCache.gameEvents.InCheck,
-				"is_over":         s.boardCache.gameEvents.IsOver,
-				"score_cp":        s.boardCache.gameEvents.ScoreCP,
-				"score_mate":      s.boardCache.gameEvents.ScoreMate,
+				"fen":                s.boardCache.fen,
+				"camera_board":       s.boardCache.cameraBoard,
+				"white_graveyard":    s.boardCache.whiteGraveyard,
+				"black_graveyard":    s.boardCache.blackGraveyard,
+				"auto":               auto,
+				"game_over":          gameOver,
+				"needs_fix":          s.boardCache.needsFix,
+				"pending_move":       pendingMove,
+				"pending_move_phase": pendingPhase,
+				"captured_at_ms":     s.boardCache.capturedAt.UnixMilli(),
+				"event":              s.boardCache.gameEvents.Event,
+				"outcome":            s.boardCache.gameEvents.Outcome,
+				"method":             s.boardCache.gameEvents.Method,
+				"turn":               s.boardCache.gameEvents.Turn,
+				"in_check":           s.boardCache.gameEvents.InCheck,
+				"is_over":            s.boardCache.gameEvents.IsOver,
+				"score_cp":           s.boardCache.gameEvents.ScoreCP,
+				"score_mate":         s.boardCache.gameEvents.ScoreMate,
 			}
 			s.boardCache.mu.RUnlock()
 			return s.withMode(result), nil
@@ -91,13 +94,16 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 	// that want just the mode without the board snapshot.
 	if q, _ := cmdMap["mode-status"].(bool); q {
 		snap := s.mode.snapshot()
+		pendingMove, pendingPhase := s.pending.get()
 		return map[string]interface{}{
-			"mode":          int(snap.Mode),
-			"mode_name":     snap.Mode.String(),
-			"idle_origin":   int(snap.IdleOrigin),
-			"err_prev_mode": int(snap.ErrPrev),
-			"game_over":     snap.GameOver,
-			"needs_fix":     s.getNeedsFix(),
+			"mode":               int(snap.Mode),
+			"mode_name":          snap.Mode.String(),
+			"idle_origin":        int(snap.IdleOrigin),
+			"err_prev_mode":      int(snap.ErrPrev),
+			"game_over":          snap.GameOver,
+			"needs_fix":          s.getNeedsFix(),
+			"pending_move":       pendingMove,
+			"pending_move_phase": pendingPhase,
 		}, nil
 	}
 
@@ -134,26 +140,29 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 	}
 	if cmd.BoardSnapshot {
 		_, auto, gameOver := s.modeFields()
+		pendingMove, pendingPhase := s.pending.get()
 		// Fast path: read the loop-populated cache; no per-call capture.
 		s.boardCache.mu.RLock()
 		if s.boardCache.ready {
 			result := map[string]interface{}{
-				"fen":             s.boardCache.fen,
-				"camera_board":    s.boardCache.cameraBoard,
-				"white_graveyard": s.boardCache.whiteGraveyard,
-				"black_graveyard": s.boardCache.blackGraveyard,
-				"auto":            auto,
-				"game_over":       gameOver,
-				"needs_fix":       s.boardCache.needsFix,
-				"captured_at_ms":  s.boardCache.capturedAt.UnixMilli(),
-				"event":           s.boardCache.gameEvents.Event,
-				"outcome":         s.boardCache.gameEvents.Outcome,
-				"method":          s.boardCache.gameEvents.Method,
-				"turn":            s.boardCache.gameEvents.Turn,
-				"in_check":        s.boardCache.gameEvents.InCheck,
-				"is_over":         s.boardCache.gameEvents.IsOver,
-				"score_cp":        s.boardCache.gameEvents.ScoreCP,
-				"score_mate":      s.boardCache.gameEvents.ScoreMate,
+				"fen":                s.boardCache.fen,
+				"camera_board":       s.boardCache.cameraBoard,
+				"white_graveyard":    s.boardCache.whiteGraveyard,
+				"black_graveyard":    s.boardCache.blackGraveyard,
+				"auto":               auto,
+				"game_over":          gameOver,
+				"needs_fix":          s.boardCache.needsFix,
+				"pending_move":       pendingMove,
+				"pending_move_phase": pendingPhase,
+				"captured_at_ms":     s.boardCache.capturedAt.UnixMilli(),
+				"event":              s.boardCache.gameEvents.Event,
+				"outcome":            s.boardCache.gameEvents.Outcome,
+				"method":             s.boardCache.gameEvents.Method,
+				"turn":               s.boardCache.gameEvents.Turn,
+				"in_check":           s.boardCache.gameEvents.InCheck,
+				"is_over":            s.boardCache.gameEvents.IsOver,
+				"score_cp":           s.boardCache.gameEvents.ScoreCP,
+				"score_mate":         s.boardCache.gameEvents.ScoreMate,
 			}
 			s.boardCache.mu.RUnlock()
 			return s.withMode(result), nil
@@ -172,22 +181,24 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 		events.ScoreMate = int(s.lastScoreMate.Load())
 		_ = s.refreshBoardCache(ctx, all)
 		return s.withMode(map[string]interface{}{
-			"fen":             fen,
-			"camera_board":    cameraBoard,
-			"white_graveyard": whiteGY,
-			"black_graveyard": blackGY,
-			"auto":            auto,
-			"game_over":       gameOver,
-			"needs_fix":       s.getNeedsFix(),
-			"captured_at_ms":  time.Now().UnixMilli(),
-			"event":           events.Event,
-			"outcome":         events.Outcome,
-			"method":          events.Method,
-			"turn":            events.Turn,
-			"in_check":        events.InCheck,
-			"is_over":         events.IsOver,
-			"score_cp":        events.ScoreCP,
-			"score_mate":      events.ScoreMate,
+			"fen":                fen,
+			"camera_board":       cameraBoard,
+			"white_graveyard":    whiteGY,
+			"black_graveyard":    blackGY,
+			"auto":               auto,
+			"game_over":          gameOver,
+			"needs_fix":          s.getNeedsFix(),
+			"pending_move":       pendingMove,
+			"pending_move_phase": pendingPhase,
+			"captured_at_ms":     time.Now().UnixMilli(),
+			"event":              events.Event,
+			"outcome":            events.Outcome,
+			"method":             events.Method,
+			"turn":               events.Turn,
+			"in_check":           events.InCheck,
+			"is_over":            events.IsOver,
+			"score_cp":           events.ScoreCP,
+			"score_mate":         events.ScoreMate,
 		}), nil
 	}
 

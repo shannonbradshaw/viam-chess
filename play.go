@@ -115,6 +115,9 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 	if err != nil {
 		return nil, err
 	}
+	// Track the move through physical execution; stays set on an execution
+	// fault so ERROR-state UIs can report what was being attempted.
+	s.pending.set(m.String(), m.S2().String())
 
 	if m.HasTag(chess.KingSideCastle) || m.HasTag(chess.QueenSideCastle) {
 		var f, t string
@@ -149,6 +152,7 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 		if err != nil {
 			return nil, err
 		}
+		s.pending.setPhase(phaseCastleRookMoved)
 	}
 
 	if m.HasTag(chess.EnPassant) {
@@ -160,6 +164,7 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 		if err != nil {
 			return nil, err
 		}
+		s.pending.setPhase(phaseEnPassantPawnGone)
 
 		if startRank == '5' {
 			theState.blackGraveyard = append(theState.blackGraveyard, 12)
@@ -188,6 +193,7 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 	if err != nil {
 		return nil, err
 	}
+	s.pending.clear()
 
 	s.announceMove(m.String(), theState.game.FEN(), "engine")
 
@@ -387,6 +393,9 @@ func (s *viamChessChess) undoMoves(ctx context.Context, n int) error {
 		return fmt.Errorf("can't refresh snapshot after undo: %w", err)
 	}
 	s.populateCacheFromCapture(allFresh)
+
+	// The physical rollback invalidates any move chosen for the old position.
+	s.pending.clear()
 
 	return s.saveGame(ctx, newState)
 }
