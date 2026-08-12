@@ -139,7 +139,14 @@ func (s *viamChessChess) movePieceWithPickupZ(ctx context.Context, data viscaptu
 			}
 		}
 		if !got {
-			return errExec(fmt.Errorf("couldn't grab piece at %s after 2 attempts", from))
+			s.logger.Warnf("grab failed at %s, retrying -20mm X", from)
+			got, err = tryGrab(r3.Vector{X: grabPos.X - 20, Y: grabPos.Y, Z: grabPos.Z})
+			if err != nil {
+				return err
+			}
+		}
+		if !got {
+			return errExec(fmt.Errorf("couldn't grab piece at %s after 3 attempts", from))
 		}
 
 		err = s.moveGripper(ctx, r3.Vector{X: xy.X, Y: xy.Y, Z: safeZ})
