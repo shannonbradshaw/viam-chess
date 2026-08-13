@@ -260,6 +260,16 @@ func TestFindBoardCorners(t *testing.T) {
 			},
 			tolerance: 3.5,
 		},
+		{
+			inputFile: "data/board26.jpg",
+			expectedCorners: []image.Point{
+				{378, 76},   // top-left
+				{1009, 70},   // top-right
+				{1009, 698}, // bottom-right
+				{382, 703}, // bottom-left
+			},
+			tolerance: 3.5,
+		},
 	}
 
 	for _, tc := range testCases {
