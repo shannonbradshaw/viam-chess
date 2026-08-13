@@ -454,24 +454,17 @@ func (s *viamChessChess) checkPositionForMoves(ctx context.Context, all viscaptu
 		from = chess.NoSquare
 		to = chess.NoSquare
 
-		for sq := chess.A1; sq <= chess.H8; sq++ {
-			x := squareToString(sq)
-
-			fromState := theState.game.Position().Board().Piece(sq)
-			o := s.findObject(all, x)
-			if o == nil {
-				return nil, fmt.Errorf("can't find object for square %s during position check", x)
-			}
-			oc := int(o.Geometry.Label()[3] - '0')
-
-			if int(fromState.Color()) != oc {
-				s.logger.Infof("different %s fromState: %v o: %v oc: %v", x, fromState, o.Geometry.Label(), oc)
-				differences = append(differences, sq)
-				if oc == 0 {
-					from = sq
-				} else if oc > 0 {
-					to = sq
-				}
+		diffs, err := s.boardDiffs(all, theState.game.Position().Board())
+		if err != nil {
+			return nil, fmt.Errorf("%w during position check", err)
+		}
+		for _, d := range diffs {
+			s.logger.Infof("different %s fromState: %v o: %v oc: %v", squareToString(d.sq), d.piece, d.label, d.camColor)
+			differences = append(differences, d.sq)
+			if d.camColor == 0 {
+				from = d.sq
+			} else {
+				to = d.sq
 			}
 		}
 
@@ -565,6 +558,67 @@ func (s *viamChessChess) checkPositionForMoves(ctx context.Context, all viscaptu
 	}
 
 	return nil, fmt.Errorf("no valid moves from: %s to %s found out of %d", squareToString(from), squareToString(to), len(moves))
+}
+
+// squareDiff is one square where the camera disagrees with a board position:
+// the position's piece vs the camera's occupancy color (0 empty, 1 white,
+// 2 black), with the raw label for logging.
+type squareDiff struct {
+	sq       chess.Square
+	piece    chess.Piece
+	label    string
+	camColor int
+}
+
+// boardDiffs compares every square of board against the capture's occupancy
+// labels and returns the disagreements. Shared by checkPositionForMoves (which
+// interprets diffs against the current position as a human move) and
+// verifyBoardMatches (which requires zero diffs against a hypothetical one).
+func (s *viamChessChess) boardDiffs(all viscapture.VisCapture, board *chess.Board) ([]squareDiff, error) {
+	var diffs []squareDiff
+	for sq := chess.A1; sq <= chess.H8; sq++ {
+		x := squareToString(sq)
+		piece := board.Piece(sq)
+		o := s.findObject(all, x)
+		if o == nil {
+			return nil, fmt.Errorf("can't find object for square %s", x)
+		}
+		oc := int(o.Geometry.Label()[3] - '0')
+		if int(piece.Color()) != oc {
+			diffs = append(diffs, squareDiff{sq: sq, piece: piece, label: o.Geometry.Label(), camColor: oc})
+		}
+	}
+	return diffs, nil
+}
+
+// verifyBoardMatches captures the board and checks every square's occupancy
+// color against game's current position, retrying a few times to ride out
+// vision noise. Returns nil only on an exact match.
+func (s *viamChessChess) verifyBoardMatches(ctx context.Context, game *chess.Game) error {
+	const attempts = 3
+	var lastDiffs []chess.Square
+	for attempt := 1; attempt <= attempts; attempt++ {
+		all, err := s.pieceFinder.CaptureAllFromCamera(ctx, "", viscapture.CaptureOptions{}, nil)
+		if err != nil {
+			return err
+		}
+		diffs, err := s.boardDiffs(all, game.Position().Board())
+		if err != nil {
+			return err
+		}
+		if len(diffs) == 0 {
+			return nil
+		}
+		lastDiffs = lastDiffs[:0]
+		for _, d := range diffs {
+			lastDiffs = append(lastDiffs, d.sq)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("mismatched squares after %d looks: %v", attempts, lastDiffs)
 }
 
 // isCastleSquarePair reports whether (from, to) is the king's from/to for any

@@ -32,6 +32,7 @@ type cmdStruct struct {
 	GameEvents      bool   `mapstructure:"game-events"`
 	CompanionConfig bool   `mapstructure:"companion-config"`
 	SetAnnounce     *bool  `mapstructure:"set-announce"` // pointer so explicit false is distinguishable from absent
+	IMovedForYou    bool   `mapstructure:"i-moved-for-you"`
 }
 
 func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interface{}) (map[string]interface{}, error) {
@@ -284,6 +285,85 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 			_ = s.refreshBoardCache(ctx, all)
 		}
 	}()
+
+	if cmd.IMovedForYou {
+		// A human physically completed the robot's interrupted move (the item-5
+		// remediation): verify the board shows the post-move position, commit
+		// the move to the game state, and resume the mode the fault broke.
+		if s.mode.current() != ModeError {
+			return nil, fmt.Errorf("i-moved-for-you is only valid in ERROR mode")
+		}
+		pendingUCI, _ := s.pending.get()
+		if pendingUCI == "" {
+			return nil, fmt.Errorf("no pending move to confirm")
+		}
+
+		theState, err := s.getGame(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var m *chess.Move
+		for _, vm := range theState.game.ValidMoves() {
+			if vm.String() == pendingUCI {
+				vm := vm
+				m = &vm
+				break
+			}
+		}
+		if m == nil {
+			return nil, fmt.Errorf("pending move %s is not legal in the saved position", pendingUCI)
+		}
+
+		// Graveyard bookkeeping mirrors the human-move path in
+		// checkPositionForMoves: captured pieces are read from the pre-move
+		// board. If a prior robot attempt already graveyarded the occupant
+		// (phase capture-cleared), the piece is in the graveyard either way and
+		// is recorded exactly once here.
+		if m.HasTag(chess.Capture) {
+			captured := theState.game.Position().Board().Piece(m.S2())
+			if captured != chess.NoPiece {
+				if captured.Color() == chess.White {
+					theState.whiteGraveyard = append(theState.whiteGraveyard, int(captured))
+				} else {
+					theState.blackGraveyard = append(theState.blackGraveyard, int(captured))
+				}
+			}
+		} else if m.HasTag(chess.EnPassant) {
+			if m.S1().Rank() == chess.Rank5 {
+				theState.blackGraveyard = append(theState.blackGraveyard, int(chess.BlackPawn))
+			} else {
+				theState.whiteGraveyard = append(theState.whiteGraveyard, int(chess.WhitePawn))
+			}
+		}
+
+		if err := theState.game.Move(m, nil); err != nil {
+			return nil, err
+		}
+		if m.Promo() != chess.NoPieceType {
+			if m.S2().Rank() == chess.Rank8 {
+				theState.whiteGraveyard = append(theState.whiteGraveyard, int(chess.WhitePawn))
+			} else {
+				theState.blackGraveyard = append(theState.blackGraveyard, int(chess.BlackPawn))
+			}
+		}
+
+		// Clear the arm from the camera and confirm the physical board shows
+		// the post-move position before committing anything.
+		if err := s.goToStart(ctx); err != nil {
+			return nil, err
+		}
+		if err := s.verifyBoardMatches(ctx, theState.game); err != nil {
+			return nil, fmt.Errorf("board does not match the completed move %s: %w", pendingUCI, err)
+		}
+
+		if err := s.saveGame(ctx, theState); err != nil {
+			return nil, err
+		}
+		s.pending.clear()
+		s.announceMove(m.String(), theState.game.FEN(), "human-for-robot")
+		s.logger.Infof("human completed interrupted move %s; resuming", pendingUCI)
+		return s.setMode(ctx, s.mode.snapshot().ErrPrev)
+	}
 
 	if cmd.Move.To != "" && cmd.Move.From != "" {
 		s.logger.Infof("move %v to %v", cmd.Move.From, cmd.Move.To)
