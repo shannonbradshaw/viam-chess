@@ -48,3 +48,38 @@ func TestPendingMoveTracker(t *testing.T) {
 		t.Fatalf("after clear, got move=%q phase=%q", move, phase)
 	}
 }
+
+func TestPendingMoveTrackerRetry(t *testing.T) {
+	var p pendingMoveTracker
+
+	// A partially-completed capture: cleared the destination, then faulted.
+	p.set("d8f6", "f6")
+	p.setPhaseIfDest("f6", phaseCaptureCleared)
+	if !p.captureCleared("f6") {
+		t.Fatal("captureCleared should be true for the recorded destination")
+	}
+	if p.captureCleared("f1") {
+		t.Fatal("captureCleared should be false for another square")
+	}
+
+	// Retrying the same move preserves the phase (skip the graveyard step).
+	p.set("d8f6", "f6")
+	if _, phase := p.get(); phase != phaseCaptureCleared {
+		t.Fatalf("same-move set should keep the phase, got %q", phase)
+	}
+
+	// A different move resets to planned.
+	p.set("d8e7", "e7")
+	if _, phase := p.get(); phase != phasePlanned {
+		t.Fatalf("different-move set should reset the phase, got %q", phase)
+	}
+	if p.captureCleared("f6") {
+		t.Fatal("captureCleared for the old move must be gone after a new move is set")
+	}
+
+	// Empty tracker never reports a cleared capture.
+	p.clear()
+	if p.captureCleared("e7") {
+		t.Fatal("captureCleared on an empty tracker should be false")
+	}
+}

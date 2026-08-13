@@ -111,9 +111,33 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 		}
 	}
 
-	m, err := s.pickMove(ctx, theState.game)
-	if err != nil {
-		return nil, err
+	// Resume an interrupted move if one is pending and still legal; asking the
+	// engine again could pick a different move and orphan the physical steps a
+	// prior attempt already completed. Resuming keeps the recorded phase so
+	// those steps (castle rook leg, en passant removal, capture clearing) are
+	// skipped rather than repeated.
+	var m *chess.Move
+	resumedPhase := ""
+	if pendingUCI, pendingPhase := s.pending.get(); pendingUCI != "" {
+		for _, vm := range theState.game.ValidMoves() {
+			if vm.String() == pendingUCI {
+				vm := vm
+				m = &vm
+				resumedPhase = pendingPhase
+				s.logger.Infof("resuming interrupted move %s (phase: %s)", pendingUCI, pendingPhase)
+				break
+			}
+		}
+		if m == nil {
+			s.logger.Warnf("pending move %s is not legal in the current position; picking fresh", pendingUCI)
+			s.pending.clear()
+		}
+	}
+	if m == nil {
+		m, err = s.pickMove(ctx, theState.game)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Track the move through physical execution; stays set on an execution
 	// fault so ERROR-state UIs can report what was being attempted.
@@ -148,11 +172,15 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 			return nil, fmt.Errorf("bad castle? %v", m)
 		}
 
-		err = s.movePiece(ctx, all, theState, f, t, nil, nil)
-		if err != nil {
-			return nil, err
+		if resumedPhase == phaseCastleRookMoved {
+			s.logger.Infof("castle rook leg already done by a prior attempt, skipping")
+		} else {
+			err = s.movePiece(ctx, all, theState, f, t, nil, nil)
+			if err != nil {
+				return nil, err
+			}
+			s.pending.setPhase(phaseCastleRookMoved)
 		}
-		s.pending.setPhase(phaseCastleRookMoved)
 	}
 
 	if m.HasTag(chess.EnPassant) {
@@ -160,11 +188,15 @@ func (s *viamChessChess) makeAMove(ctx context.Context, doSanityCheck bool) (*ch
 		endFile := m.S2().String()[0]
 
 		pieceToRemoveSquare := fmt.Sprintf("%c%c", endFile, startRank)
-		err = s.movePiece(ctx, all, theState, pieceToRemoveSquare, "-", nil, nil)
-		if err != nil {
-			return nil, err
+		if resumedPhase == phaseEnPassantPawnGone {
+			s.logger.Infof("en passant pawn already removed by a prior attempt, skipping")
+		} else {
+			err = s.movePiece(ctx, all, theState, pieceToRemoveSquare, "-", nil, nil)
+			if err != nil {
+				return nil, err
+			}
+			s.pending.setPhase(phaseEnPassantPawnGone)
 		}
-		s.pending.setPhase(phaseEnPassantPawnGone)
 
 		if startRank == '5' {
 			theState.blackGraveyard = append(theState.blackGraveyard, 12)

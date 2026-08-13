@@ -56,10 +56,34 @@ func (s *viamChessChess) movePieceWithPickupZ(ctx context.Context, data viscaptu
 		}
 
 		if occupied {
-			s.logger.Infof("position %s already has a piece, will move to graveyard", to)
-			err := s.movePiece(ctx, data, theState, to, "-", nil, nil)
-			if err != nil {
-				return fmt.Errorf("can't move piece out of the way: %w", err)
+			// On a retry of a partially-completed capture, a prior attempt
+			// already moved the occupant to the graveyard (the game state
+			// doesn't know: it is only saved after the whole move succeeds).
+			// Trust the recorded phase, confirmed by a fresh camera look, and
+			// skip the physical step — but keep the graveyard bookkeeping,
+			// which the failed attempt never persisted. theState != nil limits
+			// this to the engine-move path; undo and manual moves never skip.
+			alreadyCleared := false
+			if theState != nil && s.pending.captureCleared(to) {
+				alreadyCleared = true
+				if fresh, ferr := s.pieceFinder.CaptureAllFromCamera(ctx, "", viscapture.CaptureOptions{}, nil); ferr == nil {
+					if o := s.findObject(fresh, to); o != nil && !strings.HasSuffix(o.Geometry.Label(), "-0") {
+						alreadyCleared = false
+						s.logger.Warnf("prior attempt recorded %s as cleared but the camera sees a piece there — redoing the graveyard step", to)
+					}
+				} else {
+					s.logger.Warnf("can't visually confirm %s is clear (%v); trusting the recorded phase", to, ferr)
+				}
+			}
+
+			if alreadyCleared {
+				s.logger.Infof("position %s was already cleared by a prior attempt, skipping graveyard step", to)
+			} else {
+				s.logger.Infof("position %s already has a piece, will move to graveyard", to)
+				err := s.movePiece(ctx, data, theState, to, "-", nil, nil)
+				if err != nil {
+					return fmt.Errorf("can't move piece out of the way: %w", err)
+				}
 			}
 			if theState != nil {
 				if capturedPiece.Color() == chess.White {

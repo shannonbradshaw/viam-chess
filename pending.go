@@ -27,6 +27,11 @@ type pendingMoveTracker struct {
 func (p *pendingMoveTracker) set(move, to string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.move == move && p.to == to {
+		// Retry of the same move: keep the recorded phase so already-completed
+		// physical steps are skipped, not repeated.
+		return
+	}
 	p.move = move
 	p.to = to
 	p.phase = phasePlanned
@@ -66,4 +71,14 @@ func (p *pendingMoveTracker) get() (move, phase string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.move, p.phase
+}
+
+// captureCleared reports whether the pending move's destination is dest and a
+// prior attempt already moved dest's occupant to the graveyard. movePiece uses
+// this to skip the physical graveyard step when retrying a partially-completed
+// capture.
+func (p *pendingMoveTracker) captureCleared(dest string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.move != "" && p.to == dest && p.phase == phaseCaptureCleared
 }
