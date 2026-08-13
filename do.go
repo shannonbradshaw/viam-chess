@@ -90,6 +90,22 @@ func (s *viamChessChess) DoCommand(ctx context.Context, cmdMap map[string]interf
 		}
 		return s.applyAutoShim(ctx, on)
 	}
+	// resume: go back to the mode a fault (or pause) interrupted, without the
+	// caller needing to know which mode that was. Lock-free like mode — a
+	// recovery button must ack instantly even mid-arm-motion.
+	if r, _ := cmdMap["resume"].(bool); r {
+		snap := s.mode.snapshot()
+		var target Mode
+		switch snap.Mode {
+		case ModeError:
+			target = snap.ErrPrev
+		case ModeIdle:
+			target = snap.IdleOrigin
+		default:
+			return nil, fmt.Errorf("resume is only valid in ERROR or IDLE (current mode: %v)", snap.Mode)
+		}
+		return s.setMode(ctx, target)
+	}
 	// mode-status: lock-free read of the full machine state, for tests/clients
 	// that want just the mode without the board snapshot.
 	if q, _ := cmdMap["mode-status"].(bool); q {
