@@ -372,11 +372,27 @@ func findBoardAndPieces(ctx context.Context, srcImg image.Image, pc pointcloud.P
 	}
 	span.End()
 
-	// Phase 2: single pass through point cloud — call PointToPixel once per point
-	// instead of 64 times (once per square), reducing from O(64N) to O(N)
+	// Phase 2: single pass through the point cloud, assigning each point to a
+	// square by its metric position on the board plane. Pixel-projection
+	// bucketing mis-assigns tall pieces' upper points to the neighboring square
+	// (parallax; see metric_partition.go and fixtures board27/board28). Falls
+	// back to the pixel-rect partition when the plane or frame can't be built.
 	_, span = trace.StartSpan(ctx, "PieceFinder::findBoardAndPieces::SinglePassPartition")
+	var bf *boardFrame
+	if pl, ok := fitBoardPlane(pc, corners, props); ok {
+		bf, _ = newBoardFrame(corners, props, pl, cc.SquareInset)
+	}
+	if bf == nil {
+		logger.Warnf("metric partition unavailable (sparse cloud or missing intrinsics); using pixel-rect partition")
+	}
 	var outerErr error
 	pc.Iterate(0, 0, func(p r3.Vector, d pointcloud.Data) bool {
+		if bf != nil {
+			if col, row, ok := bf.cell(p); ok {
+				subPcs[squareIndexFor(col, row)].Set(p, d)
+			}
+			return true
+		}
 		x, y, err := props.PointToPixel(p)
 		if err != nil {
 			outerErr = err
@@ -513,10 +529,6 @@ func (d pcDiag3DExtra) rejectReason(colorDivGuard, minFootprintMM float64) strin
 func classifyPieceColor(pc pointcloud.PointCloud, img image.Image, rect image.Rectangle, props camera.Properties, cc classifyConfig) int {
 	d3x := pcDiagnose3D(pc, img, props, 0, cc.MinPieceSize)
 
-	// pc-attached colors disagree with srcImg pixels → bad depth/RGB alignment.
-	if d3x.TopColoredCount > 0 && d3x.TopColorDivergence > cc.ColorDivergenceGuard {
-		return colorFromImage2D(img, rect, cc.OtsuSeparationThreshold).Color
-	}
 
 	if d3x.TopColoredCount > 5 {
 		pieceBr := (d3x.TopMeanAttachedR + d3x.TopMeanAttachedG + d3x.TopMeanAttachedB) / 3.0
@@ -525,9 +537,17 @@ func classifyPieceColor(pc pointcloud.PointCloud, img image.Image, rect image.Re
 		pieceWarmth := d3x.TopMeanAttachedR - d3x.TopMeanAttachedB
 		const clearWhiteDiff = 25.0
 		const clearBlackDiff = -50.0
-		const warmthCutoff = 10.0
+		// Between the observed extremes: a dim cream piece in shadow measures
+		// warmth ~14.7 (board20 a2) while a near-neutral black piece reaches
+		// ~10.4 (board23 a8). The historical 10 tie-broke that black piece to
+		// white; 12.5 splits the two observed classes.
+		const warmthCutoff = 12.5
 		const absoluteWhiteCutoff = 100.0
 		if d3x.BoardColoredCount > 10 {
+			// Relative path: compares pc-attached colors against pc-attached
+			// board colors on the same square — internally consistent, so
+			// depth/RGB misregistration (the divergence guard's target) can't
+			// skew the comparison. No divergence gate here.
 			boardBr := (d3x.BoardMeanAttachedR + d3x.BoardMeanAttachedG + d3x.BoardMeanAttachedB) / 3.0
 			diff := pieceBr - boardBr
 			if diff > clearWhiteDiff {
@@ -540,6 +560,12 @@ func classifyPieceColor(pc pointcloud.PointCloud, img image.Image, rect image.Re
 				return 1
 			}
 			return 2
+		}
+		// Absolute path: judged against fixed color constants, which assume the
+		// attached colors are trustworthy — misregistration matters here, so
+		// the divergence guard applies.
+		if d3x.TopColorDivergence > cc.ColorDivergenceGuard {
+			return colorFromImage2D(img, rect, cc.OtsuSeparationThreshold).Color
 		}
 		if pieceBr > absoluteWhiteCutoff || pieceWarmth > warmthCutoff {
 			return 1
@@ -610,6 +636,12 @@ func pcDiagnose3D(pc pointcloud.PointCloud, img image.Image, props camera.Proper
 	// to estimate the visible square color around the piece for the relative
 	// W/B classifier.
 	const boardBandHalfMM = 5.0
+	// No chess piece is taller than ~100mm; points higher than this above the
+	// board are stereo glare artifacts (floating blobs), not pieces, and must
+	// not pollute the top band (fixtures board18 d7: 79 bright points 300mm up
+	// read as a phantom white piece).
+	const maxPieceHeightMM = 130.0
+	junkZCutoff := boardZ - maxPieceHeightMM
 
 	var sumAR, sumAG, sumAB, sumIR, sumIG, sumIB, sumDiv float64
 	topColored := 0
@@ -652,6 +684,11 @@ func pcDiagnose3D(pc pointcloud.PointCloud, img image.Image, props camera.Proper
 					out.BoardColoredCount++
 				}
 			}
+			return true
+		}
+
+		if p.Z < junkZCutoff {
+			// Higher above the board than any piece: glare artifact, skip.
 			return true
 		}
 
@@ -854,7 +891,11 @@ func colorFromImage2D(img image.Image, rect image.Rectangle, otsuSepThresh float
 	if cntLight < minorityCnt {
 		minorityCnt = cntLight
 	}
-	if float64(minorityCnt)/float64(diag.Total) < 0.05 {
+	// Observed anchors: a piece shadow across an empty square reads 7% dark
+	// (board28 g6) while the thinnest real piece measures 19.4% (board23 e4);
+	// 0.12 splits them. (The original 0.05 guard targeted stray-pixel noise —
+	// g4's 1.15% — and let shadows through as phantom pieces.)
+	if float64(minorityCnt)/float64(diag.Total) < 0.12 {
 		return diag
 	}
 	// Minority class is the piece — board-color-invariant, unlike "more extreme class".

@@ -261,7 +261,7 @@ func TestFindBoardCorners(t *testing.T) {
 			tolerance: 3.5,
 		},
 		{
-			inputFile: "data/board26.jpg",
+			inputFile: "data/board27.jpg",
 			expectedCorners: []image.Point{
 				{378, 76},   // top-left
 				{1009, 70},   // top-right
@@ -271,7 +271,7 @@ func TestFindBoardCorners(t *testing.T) {
 			tolerance: 3.5,
 		},
 		{
-			inputFile: "data/board27.jpg",
+			inputFile: "data/board28.jpg",
 			expectedCorners: []image.Point{
 				{382, 72},   // top-left
 				{1012, 70},   // top-right
