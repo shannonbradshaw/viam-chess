@@ -73,7 +73,7 @@ func TestMetricPartitionFailingSquares(t *testing.T) {
 					d3x.TopMinZ, d3x.TopMaxZ, d3x.BoardPlaneZ,
 					d3x.TopMaxX-d3x.TopMinX, d3x.TopMaxY-d3x.TopMinY)
 			}
-			d2 := colorFromImage2D(input, rect, cc.OtsuSeparationThreshold)
+			d2 := colorFromImage2D(input, rect, cc.OtsuSeparationThreshold, cc.BrightnessThreshold)
 			minority := d2.CntDark
 			if d2.CntLight < minority {
 				minority = d2.CntLight
