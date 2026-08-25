@@ -18,10 +18,7 @@ import (
 // can be attributed (composition change vs heuristic threshold).
 func TestMetricPartitionFailingSquares(t *testing.T) {
 	cases := []struct{ board, square string }{
-		{"board22", "e2"},
-		{"board23", "d2"},
-		{"board23", "e4"},
-		{"board28", "g6"},
+		{"board29", "h8"},
 	}
 	_ = logging.NewTestLogger(t)
 	for _, tc := range cases {
@@ -82,8 +79,8 @@ func TestMetricPartitionFailingSquares(t *testing.T) {
 			if d2.Total > 0 {
 				frac = float64(minority) / float64(d2.Total)
 			}
-			t.Logf("2D: total=%d dark=%d light=%d sep=%.1f color=%d minorityFrac=%.3f",
-				d2.Total, d2.CntDark, d2.CntLight, d2.Separation, d2.Color, frac)
+			t.Logf("2D: total=%d dark=%d light=%d sep=%.1f color=%d minorityFrac=%.3f meanDark=%.0f meanLight=%.0f",
+				d2.Total, d2.CntDark, d2.CntLight, d2.Separation, d2.Color, frac, d2.MeanDark, d2.MeanLight)
 			_ = fmt.Sprintf("%v", image.Point{})
 		})
 	}

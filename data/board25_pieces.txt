@@ -1,5 +1,5 @@
 # Rank 8 (top) to rank 1 (bottom). Files a-h. . = empty, W = white, B = black.
-B.BB.BW.
+B.BB.BB.
 BBBB.BBB
 ..B..B..
 ..B.B...
