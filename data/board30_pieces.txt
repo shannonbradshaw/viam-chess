@@ -1,0 +1,13 @@
+# Rank 8 (top) to rank 1 (bottom). Files a-h. . = empty, W = white, B = black.
+# Truth from the live game FEN (rnbqkb1r/ppp1pppp/3p1n2/8/8/1P4P1/P1PPPP1P/RNBQKBNR)
+# plus two physical facts: the white knight had physically moved b1->c3 (not yet
+# registered), and d7 confirmed empty by hand — the camera was hallucinating a
+# black piece there (the phantom this fixture exists to pin).
+BBBBBB.B
+BBB.BBBB
+...B.B..
+........
+........
+.WW...W.
+W.WWWW.W
+W.WWWWWW

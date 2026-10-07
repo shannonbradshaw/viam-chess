@@ -244,9 +244,9 @@ func TestFindBoardCorners(t *testing.T) {
 			inputFile: "data/board24.jpg",
 			expectedCorners: []image.Point{
 				{324, 18},   // top-left
-				{1010, 14},   // top-right
+				{1010, 14},  // top-right
 				{1016, 698}, // bottom-right
-				{330, 707}, // bottom-left
+				{330, 707},  // bottom-left
 			},
 			tolerance: 3.5,
 		},
@@ -254,19 +254,59 @@ func TestFindBoardCorners(t *testing.T) {
 			inputFile: "data/board25.jpg",
 			expectedCorners: []image.Point{
 				{324, 18},   // top-left
-				{1010, 14},   // top-right
+				{1010, 14},  // top-right
 				{1016, 698}, // bottom-right
-				{330, 707}, // bottom-left
+				{330, 707},  // bottom-left
 			},
 			tolerance: 3.5,
 		},
 		{
 			inputFile: "data/board26.jpg",
 			expectedCorners: []image.Point{
-				{367, 45},   // top-left
-				{1001, 46},   // top-right
+				{367, 45},  // top-left
+				{1001, 46}, // top-right
 				{993, 676}, // bottom-right
 				{367, 673}, // bottom-left
+			},
+			tolerance: 3.5,
+		},
+		{
+			inputFile: "data/board27.jpg",
+			expectedCorners: []image.Point{
+				{378, 76},   // top-left
+				{1009, 70},  // top-right
+				{1009, 698}, // bottom-right
+				{382, 703},  // bottom-left
+			},
+			tolerance: 3.5,
+		},
+		{
+			inputFile: "data/board28.jpg",
+			expectedCorners: []image.Point{
+				{382, 72},   // top-left
+				{1012, 70},  // top-right
+				{1009, 699}, // bottom-right
+				{382, 699},  // bottom-left
+			},
+			tolerance: 3.5,
+		},
+		{
+			inputFile: "data/board29.jpg",
+			expectedCorners: []image.Point{
+				{382, 72},   // top-left
+				{1012, 71},  // top-right
+				{1009, 699}, // bottom-right
+				{382, 699},  // bottom-left
+			},
+			tolerance: 3.5,
+		},
+		{
+			inputFile: "data/board30.jpg",
+			expectedCorners: []image.Point{
+				{382, 72},   // top-left
+				{1012, 71},  // top-right
+				{1008, 699}, // bottom-right
+				{382, 699},  // bottom-left
 			},
 			tolerance: 3.5,
 		},
